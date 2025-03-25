@@ -47,9 +47,13 @@ RUN git init && \
     rm -rf .git/
 
 FROM --platform=${BUILDPLATFORM} base AS build
+###Insert Custom Attributes###
+ARG BUILD_DATE
+ARG VERSION=1.0.0
+LABEL build_version="Alpine gluetun version:- ${VERSION} Build-date:- ${BUILD_DATE}"
 ARG TARGETPLATFORM
-ARG VERSION=unknown
-ARG CREATED="an unknown date"
+#ARG VERSION=unknown
+ARG CREATED="${BUILD_DATE}"
 ARG COMMIT=unknown
 RUN GOARCH="$(xcputranslate translate -field arch -targetplatform ${TARGETPLATFORM})" \
     GOARM="$(xcputranslate translate -field arm -targetplatform ${TARGETPLATFORM})" \
@@ -60,8 +64,8 @@ RUN GOARCH="$(xcputranslate translate -field arch -targetplatform ${TARGETPLATFO
     " -o entrypoint cmd/gluetun/main.go
 
 FROM alpine:${ALPINE_VERSION}
-ARG VERSION=unknown
-ARG CREATED="an unknown date"
+#ARG VERSION=unknown
+ARG CREATED="${BUILD_DATE}"
 ARG COMMIT=unknown
 LABEL \
     org.opencontainers.image.authors="quentin.mcgaw@gmail.com" \
@@ -221,10 +225,49 @@ ENV VPN_SERVICE_PROVIDER=pia \
     TZ= \
     PUID= \
     PGID=
-ENTRYPOINT ["/gluetun-entrypoint"]
+###Begin ENTRYPOINT modification and startup script via /root/scripts/init-setup.sh###
+#ENTRYPOINT ["/gluetun-entrypoint"]
+RUN mkdir -p /root/scripts
+COPY scripts-bb/init-setup.sh /root/scripts
+COPY scripts-bb/fw-config.sh /root/scripts
+RUN chmod -R 775 /root/scripts
+RUN chmod +x /root/scripts/init-setup.sh
+RUN chmod +x /root/scripts/fw-config.sh
+ENTRYPOINT ["/root/scripts/init-setup.sh"]
 EXPOSE 8000/tcp 8888/tcp 8388/tcp 8388/udp
 HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=3 CMD /gluetun-entrypoint healthcheck
 ARG TARGETPLATFORM
+
+###Begin Custom Module Installation as of 24MAR2025###
+RUN \
+    echo "**** install manpages ****" && \
+    ###Install manpages first###
+    apk add --no-cache \
+    mandoc man-pages \
+    mandoc-apropos less less-doc
+###End manpages setup###
+RUN \
+    echo "**** install dependencies ****" && \
+    apk add --no-cache \
+    bc \
+    coredns \
+    grep \
+    iproute2 \
+    ip6tables \
+    iputils \
+    kmod \
+    libcap-utils \
+    libqrencode-tools \
+    net-tools \
+    openresolv \
+    ###Begin adding Custom Packages below###
+    vim nano wget curl git python3 py3-virtualenv jq tar \
+    ca-certificates htop bc bind-tools iputils-ping ncurses \
+    #wireguard-tools-wg-quick \
+    bash \
+    zip unzip gzip openssh-server openssh
+###End Custom Module Installation as of 24MAR2025###
+
 RUN apk add --no-cache --update -l wget && \
     apk add --no-cache --update -X "https://dl-cdn.alpinelinux.org/alpine/v3.17/main" openvpn\~2.5 && \
     mv /usr/sbin/openvpn /usr/sbin/openvpn2.5 && \
